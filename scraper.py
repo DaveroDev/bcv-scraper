@@ -2,10 +2,10 @@ import requests
 from bs4 import BeautifulSoup
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime, timedelta # 👈 Importamos herramientas de tiempo
 
 app = FastAPI()
 
-# Permitir conexiones desde cualquier origen (esencial para que Android no lo bloquee)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,6 +13,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 🧠 VARIABLES GLOBALES (La memoria de tu servidor en Render)
+CACHE_TASA = None
+CACHE_ULTIMA_ACTUALIZACION = None
+TIEMPO_EXPIRACION = timedelta(minutes=30) # 👈 Definimos tu ventana de 30 minutos
 
 def scraping_bcv():
     url = "https://www.bcv.org.ve/"
@@ -34,18 +39,29 @@ def scraping_bcv():
         print(f"Error en scraping: {e}")
     return None
 
-# Creamos la ruta que consultará la aplicación de Android
 @app.get("/v1/cotizaciones")
 def obtener_cotizaciones():
-    tasa = scraping_bcv()
+    global CACHE_TASA, CACHE_ULTIMA_ACTUALIZACION
     
-    if tasa:
-        # Devolvemos exactamente la estructura que tu Android Studio procesa actualmente
-        return [
-            {
-                "nombre": "Dólar",
-                "promedio": tasa
-            }
-        ]
+    ahora = datetime.now()
+    
+    # 🕵️ LÓGICA DE CONTROL DE TRÁFICO:
+    # Si tenemos una tasa guardada Y no han pasado 30 minutos, entregamos el "colchón" al instante
+    if CACHE_TASA and CACHE_ULTIMA_ACTUALIZACION and (ahora - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
+        print("⚡ Entregando tasa desde la caché de Render (Cero consumo de recursos)")
+        return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
+    
+    # Si la caché no existe o ya expiró (pasaron los 30 min), mandamos al scraper a trabajar
+    print("🌐 La caché expiró o está vacía. Buscando nueva tasa en el BCV...")
+    nueva_tasa = scraping_bcv()
+    
+    if nueva_tasa:
+        # Actualizamos la memoria del servidor con el nuevo valor y la hora actual
+        CACHE_TASA = nueva_tasa
+        CACHE_ULTIMA_ACTUALIZACION = ahora
+        return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
     else:
+        # Si el BCV se cae, como plan de respaldo entregamos la última tasa vieja que tengamos guardada
+        if CACHE_TASA:
+            return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
         return [{"nombre": "Dólar", "promedio": None}]
