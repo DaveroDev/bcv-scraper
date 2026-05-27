@@ -17,7 +17,7 @@ app.add_middleware(
 # 🧠 VARIABLES GLOBALES (La memoria de tu servidor en Render)
 CACHE_TASA = None
 CACHE_ULTIMA_ACTUALIZACION = None
-TIEMPO_EXPIRACION = timedelta(minutes=30) # 👈 Definimos tu ventana de 30 minutos
+TIEMPO_EXPIRACION = timedelta(minutes=30) # Definimos ventana de 30 minutos
 
 def scraping_bcv():
     url = "https://www.bcv.org.ve/"
@@ -46,22 +46,22 @@ def obtener_cotizaciones():
     ahora = datetime.now()
     
     # 🕵️ LÓGICA DE CONTROL DE TRÁFICO:
-    # Si tenemos una tasa guardada Y no han pasado 30 minutos, entregamos el "colchón" al instante
+    # Si tenemos una tasa guardada Y no han pasado 30 minutos, entregamos el respaldo que es la ultima tasa al instante
     if CACHE_TASA and CACHE_ULTIMA_ACTUALIZACION and (ahora - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
         print("⚡ Entregando tasa desde la caché de Render (Cero consumo de recursos)")
         return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
     
-    # Si la caché no existe o ya expiró (pasaron los 30 min), mandamos al scraper a trabajar
+    # Si la caché no existe o ya expiró (pasaron los 30 min), mandar al scraper a trabajar
     print("🌐 La caché expiró o está vacía. Buscando nueva tasa en el BCV...")
     nueva_tasa = scraping_bcv()
     
     if nueva_tasa:
-        # Actualizamos la memoria del servidor con el nuevo valor y la hora actual
+        # Actualizar la memoria del servidor con el nuevo valor y la hora actual
         CACHE_TASA = nueva_tasa
         CACHE_ULTIMA_ACTUALIZACION = ahora
         return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
     else:
-        # Si el BCV se cae, como plan de respaldo entregamos la última tasa vieja que tengamos guardada
+        # Si el BCV se cae, como plan de respaldo entrega la última tasa vieja que tengamos guardada
         if CACHE_TASA:
             return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
         return [{"nombre": "Dólar", "promedio": None}]
