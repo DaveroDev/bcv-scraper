@@ -1,6 +1,8 @@
+from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
@@ -12,12 +14,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# VARIABLES GLOBALES
-CACHE_TASA = None
+# 🧠 VARIABLES GLOBALES (La memoria de tu servidor en Render)
+CACHE_TASAS = None
 CACHE_ULTIMA_ACTUALIZACION = None
-TIEMPO_EXPIRACION = timedelta(minutes=30) # Definimos ventana de 30 minutos
-
-def scraping_bcv():
+TIEMPO_EXPIRACION = timedelta(minutes=30)  # Ventana de 30 minutos
 
 def raspar_tasas_bcv():
     url = "https://www.bcv.org.ve/"
@@ -26,17 +26,13 @@ def raspar_tasas_bcv():
     }
     
     try:
-        # Hacemos la petición desactivando la verificación SSL estricta por si el BCV tiene problemas de certificado
         respuesta = requests.get(url, headers=headers, verify=False, timeout=15)
         if respuesta.status_code != 200:
-            raise HTTPException(status_code=502, detail="No se pudo acceder a la página del BCV")
+            return None
             
         soup = BeautifulSoup(respuesta.text, 'lxml')
-        
-        # Diccionario para almacenar los resultados limpios
         tasas = {}
         
-        # Lista de las monedas que queremos buscar y sus IDs correspondientes en el HTML del BCV
         monedas_a_buscar = {
             "Dólar": "dolar",
             "Euro": "euro"
@@ -47,52 +43,44 @@ def raspar_tasas_bcv():
             if bloque_moneda:
                 elemento_tasa = bloque_moneda.find("strong", class_="strong-tb")
                 if elemento_tasa:
-                    # Limpiamos el texto, cambiamos comas por puntos y lo convertimos a float
                     tasa_limpia = elemento_tasa.text.strip().replace(',', '.')
                     tasas[nombre] = float(tasa_limpia)
             
-        # Si por alguna razón no se extrajo ninguna tasa, lanzamos error
-        if not tasas:
-            raise HTTPException(status_code=500, detail="Error al formatear los datos del BCV")
-            
-        return tasas
+        return tasas if tasas else None
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en el scraper: {str(e)}")
+    except Exception:
+        return None
 
 @app.get("/v1/cotizaciones")
 def obtener_cotizaciones():
-    diccionario_tasas = raspar_tasas_bcv()
+    global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION
     
-<<<<<<< HEAD
     ahora = datetime.now()
     
-    # 🕵️ LÓGICA DE CONTROL DE TRÁFICO:
-    # Si tenemos una tasa guardada Y no han pasado 30 minutos, entregamos el respaldo que es la ultima tasa al instante
-    if CACHE_TASA and CACHE_ULTIMA_ACTUALIZACION and (ahora - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
-        print("⚡ Entregando tasa desde la caché de Render (Cero consumo de recursos)")
-        return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
+    # 🕵️ LÓGICA DE CONTROL DE TRÁFICO (CACHÉ EN RENDER):
+    if CACHE_TASAS and CACHE_ULTIMA_ACTUALIZACION and (ahora - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
+        print("⚡ Entregando tasas desde la caché de Render (Dólar y Euro)")
+        return [
+            {"nombre": "Dólar", "promedio": CACHE_TASAS.get("Dólar")},
+            {"nombre": "Euro", "promedio": CACHE_TASAS.get("Euro")}
+        ]
     
-    # Si la caché no existe o ya expiró (pasaron los 30 min), mandar al scraper a trabajar
-    print("🌐 La caché expiró o está vacía. Buscando nueva tasa en el BCV...")
-    nueva_tasa = scraping_bcv()
+    print("🌐 La caché expiró o está vacía. Buscando nuevas tasas en el BCV...")
+    nuevas_tasas = raspar_tasas_bcv()
     
-    if nueva_tasa:
-        # Actualizar la memoria del servidor con el nuevo valor y la hora actual
-        CACHE_TASA = nueva_tasa
+    if nuevas_tasas:
+        CACHE_TASAS = nuevas_tasas
         CACHE_ULTIMA_ACTUALIZACION = ahora
-        return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
-    else:
-        # Si el BCV se cae, como plan de respaldo entrega la última tasa vieja que tengamos guardada
-        if CACHE_TASA:
-            return [{"nombre": "Dólar", "promedio": CACHE_TASA}]
-        return [{"nombre": "Dólar", "promedio": None}]
-=======
-    # Formateamos la respuesta como una lista de objetos para que Android la lea fácilmente
+    
+    if not nuevas_tasas and CACHE_TASAS:
+        print("⚠️ Falló el scraping. Usando respaldo de la caché global.")
+        nuevas_tasas = CACHE_TASAS
+
+    if not nuevas_tasas:
+        raise HTTPException(status_code=502, detail="No se pudieron obtener las cotizaciones del BCV")
+
     respuesta_json = [
-        {"nombre": "Dólar", "promedio": diccionario_tasas.get("Dólar")},
-        {"nombre": "Euro", "promedio": diccionario_tasas.get("Euro")}
+        {"nombre": "Dólar", "promedio": nuevas_tasas.get("Dólar")},
+        {"nombre": "Euro", "promedio": nuevas_tasas.get("Euro")}
     ]
     return respuesta_json
->>>>>>> 7dc5034 (Backend: Añadido soporte para extraer Dólar y Euro del BCV)
-
