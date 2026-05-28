@@ -12,7 +12,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🧠 VARIABLES GLOBALES (La memoria de tu servidor en Render)
+# VARIABLES GLOBALES
 CACHE_TASA = None
 CACHE_ULTIMA_ACTUALIZACION = None
 TIEMPO_EXPIRACION = timedelta(minutes=30) # Definimos ventana de 30 minutos
@@ -20,7 +20,6 @@ TIEMPO_EXPIRACION = timedelta(minutes=30) # Definimos ventana de 30 minutos
 def scraping_bcv():
 
 def raspar_tasas_bcv():
-7dc5034 (Backend: Añadido soporte para extraer Dólar y Euro del BCV)
     url = "https://www.bcv.org.ve/"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
