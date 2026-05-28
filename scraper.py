@@ -96,3 +96,4 @@ def obtener_cotizaciones():
     ]
     return respuesta_json
 >>>>>>> 7dc5034 (Backend: Añadido soporte para extraer Dólar y Euro del BCV)
+
