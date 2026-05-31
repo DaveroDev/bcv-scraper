@@ -17,7 +17,7 @@ app.add_middleware(
 # 🧠 VARIABLES GLOBALES (La memoria de tu servidor en Render)
 CACHE_TASAS = None
 CACHE_ULTIMA_ACTUALIZACION = None
-TIEMPO_EXPIRACION = timedelta(minutes=30)  # Ventana de 30 minutos
+TIEMPO_EXPIRACION = timedelta(minutes=15)  # Ventana de 30 minutos
 
 def raspar_tasas_bcv():
     url = "https://www.bcv.org.ve/"
