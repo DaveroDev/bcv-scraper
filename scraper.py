@@ -2,10 +2,19 @@ import asyncio  # <--- ¡ESTA ES LA IMPORTACIÓN QUE TE FALTABA!
 from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request  # <--- Agregamos 'Request'
 from fastapi.middleware.cors import CORSMiddleware
 
+# 🛡️ IMPORTACIONES PARA LA SEGURIDAD ANTI-SPAM
+from slowapi import Limiter, _rate_limit_exceeded_responder
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# Inicializamos el limitador basado en la IP del teléfono que hace la consulta
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_responder)
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,8 +65,10 @@ def raspar_tasas_bcv():
     except Exception:
         return None
 
+# 🔒 Añadimos el decorador '@limiter.limit'. Máximo 5 peticiones por minuto por IP.
 @app.get("/v1/cotizaciones")
-async def obtener_cotizaciones():  # <--- Agregamos 'async' para poder usar await
+@limiter.limit("5/minute")
+async def obtener_cotizaciones(request: Request):  # <--- FastAPI necesita el parámetro 'request' para leer la IP
     global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
     
     ahora = datetime.now()
