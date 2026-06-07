@@ -3,7 +3,8 @@ import asyncio
 from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException, Request, Headerfrom fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi.middleware.cors import CORSMiddleware
 # 🛡️ IMPORTACIONES PARA LA SEGURIDAD ANTI-SPAM
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
