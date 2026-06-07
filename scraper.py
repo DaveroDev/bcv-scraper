@@ -70,10 +70,19 @@ def raspar_tasas_bcv():
 @limiter.limit("5/minute")
 async def obtener_cotizaciones(request: Request):  # <--- FastAPI necesita el parámetro 'request' para leer la IP
     global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
+
+    TOKEN_SECRETO_REQUERIDO = os.getenv("API_SECRET_TOKEN", "")
+    
+    # Si el token enviado por la app no coincide con el guardado...
+    if not x_app_token or x_app_token != TOKEN_SECRETO_REQUERIDO:
+        raise HTTPException(
+            status_code=401, 
+            detail="Acceso no autorizado."
+        )
     
     ahora = datetime.now()
     
-    # 1. CAPA PASIVA: Si la caché está fresca, responder volando
+    # 1. Si la caché está fresca, responder volando
     if CACHE_TASAS and CACHE_ULTIMA_ACTUALIZACION and (ahora - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
         print("⚡ Entregando tasas desde la caché de Render (Dólar y Euro)")
         return [
@@ -81,7 +90,7 @@ async def obtener_cotizaciones(request: Request):  # <--- FastAPI necesita el pa
             {"nombre": "Euro", "promedio": CACHE_TASAS.get("Euro")}
         ]
     
-    # 2. COLAPSO DE PETICIONES: Si la caché expiró pero YA HAY otra solicitud raspando el BCV...
+    # 2. Si la caché expiró pero YA HAY otra solicitud raspando el BCV...
     if SCRAPING_EN_CURSO:
         print("⏳ Estampida detectada: Esta petición esperará en cola el resultado del scraper en curso...")
         while SCRAPING_EN_CURSO:
@@ -95,7 +104,7 @@ async def obtener_cotizaciones(request: Request):  # <--- FastAPI necesita el pa
                 {"nombre": "Euro", "promedio": CACHE_TASAS.get("Euro")}
             ]
 
-    # 3. EL LÍDER: Si nadie está haciendo scraping, esta petición toma el control y bloquea el paso
+    # 3. Si nadie está haciendo scraping, esta petición toma el control y bloquea el paso
     async with LOCK_CONCURRENCIA:
         SCRAPING_EN_CURSO = True
 
