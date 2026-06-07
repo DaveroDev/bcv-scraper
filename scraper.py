@@ -69,7 +69,10 @@ def raspar_tasas_bcv():
 # 🔒 Añadimos el decorador '@limiter.limit'. Máximo 5 peticiones por minuto por IP.
 @app.get("/v1/cotizaciones")
 @limiter.limit("5/minute")
-async def obtener_cotizaciones(request: Request):  # <--- FastAPI necesita el parámetro 'request' para leer la IP
+async def obtener_cotizaciones(
+    request: Request
+    x_app_token: str = Header(None)
+):  
     global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
 
     TOKEN_SECRETO_REQUERIDO = os.getenv("API_SECRET_TOKEN", "")
