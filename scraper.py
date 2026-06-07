@@ -70,7 +70,7 @@ def raspar_tasas_bcv():
 @app.get("/v1/cotizaciones")
 @limiter.limit("5/minute")
 async def obtener_cotizaciones(
-    request: Request
+    request: Request,
     x_app_token: str = Header(None)
 ):  
     global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
