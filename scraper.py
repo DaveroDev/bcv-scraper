@@ -65,21 +65,21 @@ def raspar_tasas_bcv():
     except Exception:
         return None
 
-# 🔒 Añadimos el decorador '@limiter.limit'. Máximo 5 peticiones por minuto por IP.
+# Máximo 5 peticiones por minuto por IP.
 @app.get("/v1/cotizaciones")
 @limiter.limit("5/minute")
 async def obtener_cotizaciones(
     request: Request
-    # 💡 Quitamos la variable x_app_token de los parámetros para que FastAPI no se confunda
 ):
     global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
-
-    # 🛡️ LEEMOS EL HEADER DIRECTAMENTE DESDE EL OBJETO REQUEST EN TEXTO PLANO
+    
     # Esto busca el header tal cual lo manda Android, sin importar guiones o mayúsculas
     x_app_token = request.headers.get("x-app-token")
 
     TOKEN_SECRETO_REQUERIDO = os.getenv("API_SECRET_TOKEN", "")
-
+    # LOGS TEMPORALES PARA EL PANEL DE RENDER
+    print(f"🔍 DEBUG -> Token recibido desde Android: '{x_app_token}'")
+    print(f"🔍 DEBUG -> Token que tiene Render en Environment: '{TOKEN_SECRETO_REQUERIDO}'")
     # Si el token enviado por la app no coincide con el guardado...
     if not x_app_token or x_app_token != TOKEN_SECRETO_REQUERIDO:
         raise HTTPException(
