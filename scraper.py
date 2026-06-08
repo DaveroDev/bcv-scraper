@@ -40,7 +40,7 @@ def raspar_tasas_bcv():
     }
     
     try:
-        respuesta = requests.get(url, headers=headers, verify=False, timeout=15)
+        respuesta = requests.get(url, headers=headers, verify=True, timeout=15)
         if respuesta.status_code != 200:
             return None
             
