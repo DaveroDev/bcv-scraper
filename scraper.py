@@ -69,20 +69,24 @@ def raspar_tasas_bcv():
 @app.get("/v1/cotizaciones")
 @limiter.limit("5/minute")
 async def obtener_cotizaciones(
-    request: Request,
-    x_app_token: str = Header(None, alias="x-app-token")
-):  
+    request: Request
+    # 💡 Quitamos la variable x_app_token de los parámetros para que FastAPI no se confunda
+):
     global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
 
+    # 🛡️ LEEMOS EL HEADER DIRECTAMENTE DESDE EL OBJETO REQUEST EN TEXTO PLANO
+    # Esto busca el header tal cual lo manda Android, sin importar guiones o mayúsculas
+    x_app_token = request.headers.get("x-app-token")
+
     TOKEN_SECRETO_REQUERIDO = os.getenv("API_SECRET_TOKEN", "")
-    
+
     # Si el token enviado por la app no coincide con el guardado...
     if not x_app_token or x_app_token != TOKEN_SECRETO_REQUERIDO:
         raise HTTPException(
-            status_code=401, 
+            status_code=401,
             detail="Acceso no autorizado."
         )
-    
+
     ahora = datetime.now()
     
     # 1. Si la caché está fresca, responder volando
