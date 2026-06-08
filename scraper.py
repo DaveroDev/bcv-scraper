@@ -73,13 +73,10 @@ async def obtener_cotizaciones(
 ):
     global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
     
-    # Esto busca el header tal cual lo manda Android, sin importar guiones o mayúsculas
+    # Esto busca el header tal cual
     x_app_token = request.headers.get("x-app-token")
 
     TOKEN_SECRETO_REQUERIDO = os.getenv("API_SECRET_TOKEN", "")
-    # LOGS TEMPORALES PARA EL PANEL DE RENDER
-    print(f"🔍 DEBUG -> Token recibido desde Android: '{x_app_token}'")
-    print(f"🔍 DEBUG -> Token que tiene Render en Environment: '{TOKEN_SECRETO_REQUERIDO}'")
     # Si el token enviado por la app no coincide con el guardado...
     if not x_app_token or x_app_token != TOKEN_SECRETO_REQUERIDO:
         raise HTTPException(
