@@ -43,10 +43,10 @@ def raspar_tasas_bcv():
     }
     
     try:
-        with httpx.Client(verify=True) as client:
+        with httpx.Client(verify=False) as client: 
             respuesta = client.get(
-                "https://www.bcv.org.ve", 
-                headers=headers, 
+                "https://www.bcv.org.ve",
+                headers=headers,
                 timeout=15.0
             )
             
