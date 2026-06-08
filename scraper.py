@@ -1,4 +1,5 @@
 import os
+import httpx
 import asyncio  
 from datetime import datetime, timedelta
 import requests
@@ -9,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Inicializamos el limitador basado en la IP del teléfono que hace la consulta
 limiter = Limiter(key_func=get_remote_address)
@@ -40,9 +43,15 @@ def raspar_tasas_bcv():
     }
     
     try:
-        respuesta = requests.get(url, headers=headers, verify=True, timeout=15)
+        with httpx.Client(verify=True) as client:
+            respuesta = client.get(
+                "https://www.bcv.org.ve", 
+                headers=headers, 
+                timeout=15.0
+            )
+            
         if respuesta.status_code != 200:
-            return None
+            raise HTTPException(status_code=502, detail="Error al obtener datos del BCV")
             
         soup = BeautifulSoup(respuesta.text, 'lxml')
         tasas = {}
@@ -62,8 +71,8 @@ def raspar_tasas_bcv():
             
         return tasas if tasas else None
 
-    except Exception:
-        return None
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Error de conexión con el BCV: {str(e)}")
 
 # Máximo 5 peticiones por minuto por IP.
 @app.get("/v1/cotizaciones")
