@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🧠 VARIABLES GLOBALES (La memoria de tu servidor en Render)
+#VARIABLES GLOBALES 
 CACHE_TASAS = None
 CACHE_ULTIMA_ACTUALIZACION = None
 TIEMPO_EXPIRACION = timedelta(minutes=15)  # Ventana de 30 minutos
@@ -57,7 +57,7 @@ def obtener_cotizaciones():
     
     ahora = datetime.now()
     
-    # 🕵️ LÓGICA DE CONTROL DE TRÁFICO (CACHÉ EN RENDER):
+    # LÓGICA DE CONTROL DE TRÁFICO (CACHÉ EN RENDER):
     if CACHE_TASAS and CACHE_ULTIMA_ACTUALIZACION and (ahora - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
         print("⚡ Entregando tasas desde la caché de Render (Dólar y Euro)")
         return [
