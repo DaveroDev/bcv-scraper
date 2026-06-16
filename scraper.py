@@ -1,10 +1,20 @@
+import os
+import httpx
+import asyncio  
 from datetime import datetime, timedelta
-import requests
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+# 🛡️ IMPORTACIONES PARA LA SEGURIDAD ANTI-SPAM
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
+# Inicializamos el limitador basado en la IP del teléfono que hace la consulta
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,10 +24,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#VARIABLES GLOBALES 
+# 🧠 VARIABLES GLOBALES (La memoria de tu servidor en Render)
 CACHE_TASAS = None
 CACHE_ULTIMA_ACTUALIZACION = None
-TIEMPO_EXPIRACION = timedelta(minutes=15)  # Ventana de 30 minutos
+TIEMPO_EXPIRACION = timedelta(minutes=15)
+
+# 🛡️ ESCUDO ANTI-ESTAMPIDA (Request Collapsing)
+SCRAPING_EN_CURSO = False
+LOCK_CONCURRENCIA = asyncio.Lock()
 
 def raspar_tasas_bcv():
     url = "https://www.bcv.org.ve/"
@@ -26,38 +40,57 @@ def raspar_tasas_bcv():
     }
     
     try:
-        respuesta = requests.get(url, headers=headers, verify=False, timeout=15)
-        if respuesta.status_code != 200:
-            return None
+        with httpx.Client(verify=False) as client: 
+            respuesta = client.get(
+                url,  
+                headers=headers,
+                timeout=15.0
+            )
             
-        soup = BeautifulSoup(respuesta.text, 'lxml')
-        tasas = {}
-        
-        monedas_a_buscar = {
-            "Dólar": "dolar",
-            "Euro": "euro"
-        }
-        
-        for nombre, id_html in monedas_a_buscar.items():
-            bloque_moneda = soup.find(id=id_html)
-            if bloque_moneda:
-                elemento_tasa = bloque_moneda.find("strong", class_="strong-tb")
-                if elemento_tasa:
-                    tasa_limpia = elemento_tasa.text.strip().replace(',', '.')
-                    tasas[nombre] = float(tasa_limpia)
+            if respuesta.status_code != 200:
+                raise HTTPException(status_code=502, detail="Error al obtener datos del BCV")
+                
+            soup = BeautifulSoup(respuesta.text, 'lxml')
+            tasas = {}
             
-        return tasas if tasas else None
+            monedas_a_buscar = {
+                "Dólar": "dolar",
+                "Euro": "euro"
+            }
+            
+            for nombre, id_html in monedas_a_buscar.items():
+                bloque_moneda = soup.find(id=id_html)
+                if bloque_moneda:
+                    elemento_tasa = bloque_moneda.find("strong", class_="strong-tb")
+                    if elemento_tasa:
+                        tasa_limpia = elemento_tasa.text.strip().replace(',', '.')
+                        tasas[nombre] = float(tasa_limpia)
+                        
+            return tasas if tasas else None
 
-    except Exception:
-        return None
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Error de conexión con el BCV: {str(e)}")
 
+# Máximo 5 peticiones por minuto por IP.
 @app.get("/v1/cotizaciones")
-def obtener_cotizaciones():
-    global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION
+@limiter.limit("5/minute")
+async def obtener_cotizaciones(request: Request):
+    global CACHE_TASAS, CACHE_ULTIMA_ACTUALIZACION, SCRAPING_EN_CURSO
     
+    # Esto busca el header tal cual
+    x_app_token = request.headers.get("x-app-token")
+
+    TOKEN_SECRETO_REQUERIDO = os.getenv("API_SECRET_TOKEN", "")
+    # Si el token enviado por la app no coincide con el guardado...
+    if not x_app_token or x_app_token != TOKEN_SECRETO_REQUERIDO:
+        raise HTTPException(
+            status_code=401,
+            detail="Acceso no autorizado."
+        )
+
     ahora = datetime.now()
     
-    # LÓGICA DE CONTROL DE TRÁFICO (CACHÉ EN RENDER):
+    # 1. Si la caché está fresca, responder volando
     if CACHE_TASAS and CACHE_ULTIMA_ACTUALIZACION and (ahora - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
         print("⚡ Entregando tasas desde la caché de Render (Dólar y Euro)")
         return [
@@ -65,22 +98,51 @@ def obtener_cotizaciones():
             {"nombre": "Euro", "promedio": CACHE_TASAS.get("Euro")}
         ]
     
-    print("🌐 La caché expiró o está vacía. Buscando nuevas tasas en el BCV...")
-    nuevas_tasas = raspar_tasas_bcv()
-    
-    if nuevas_tasas:
-        CACHE_TASAS = nuevas_tasas
-        CACHE_ULTIMA_ACTUALIZACION = ahora
-    
-    if not nuevas_tasas and CACHE_TASAS:
-        print("⚠️ Falló el scraping. Usando respaldo de la caché global.")
-        nuevas_tasas = CACHE_TASAS
+    # 2. Si la caché expiró pero YA HAY otra solicitud raspando el BCV...
+    if SCRAPING_EN_CURSO:
+        print("⏳ Estampida detectada: Esta petición esperará en cola el resultado del scraper en curso...")
+        while SCRAPING_EN_CURSO:
+            await asyncio.sleep(0.2)  # Duerme asíncronamente 200ms y vuelve a chequear
+        
+        if CACHE_TASAS:
+            print("📦 Cola liberada. Entregando la nueva caché generada por el hilo líder.")
+            return [
+                {"nombre": "Dólar", "promedio": CACHE_TASAS.get("Dólar")},
+                {"nombre": "Euro", "promedio": CACHE_TASAS.get("Euro")}
+            ]
+
+    # 3. Control de la estampida seguro mediante Lock
+    async with LOCK_CONCURRENCIA:
+        # ✅ CORRECCIÓN 3: Si otra petición ganó el lock mientras esperábamos, evitamos re-raspar
+        if CACHE_TASAS and CACHE_ULTIMA_ACTUALIZACION and (datetime.now() - CACHE_ULTIMA_ACTUALIZACION < TIEMPO_EXPIRACION):
+            return [
+                {"nombre": "Dólar", "promedio": CACHE_TASAS.get("Dólar")},
+                {"nombre": "Euro", "promedio": CACHE_TASAS.get("Euro")}
+            ]
+            
+        SCRAPING_EN_CURSO = True
+
+    try:
+        print("🌐 La caché expiró o está vacía. Buscando nuevas tasas en el BCV...")
+        # Corremos el raspado pesado en un ejecutor externo para NO congelar el bucle asíncrono de FastAPI
+        loop = asyncio.get_running_loop()
+        nuevas_tasas = await loop.run_in_executor(None, raspar_tasas_bcv)
+        
+        if nuevas_tasas:
+            CACHE_TASAS = nuevas_tasas
+            CACHE_ULTIMA_ACTUALIZACION = datetime.now()
+        
+        if not nuevas_tasas and CACHE_TASAS:
+            print("⚠️ Falló el scraping. Usando respaldo de la caché global.")
+            nuevas_tasas = CACHE_TASAS
+
+    finally:
+        SCRAPING_EN_CURSO = False
 
     if not nuevas_tasas:
         raise HTTPException(status_code=502, detail="No se pudieron obtener las cotizaciones del BCV")
 
-    respuesta_json = [
+    return [
         {"nombre": "Dólar", "promedio": nuevas_tasas.get("Dólar")},
         {"nombre": "Euro", "promedio": nuevas_tasas.get("Euro")}
     ]
-    return respuesta_json
